@@ -1,0 +1,94 @@
+# Arch Linux Encrypted Install Basic Guide                                          -
+# Note: Not FOR UEFI                                                                -
+# When in doubt, refer to Arch Wiki for additional guidence                         -
+-------------------------------------------------------------------------------------
+# Establish a internet connection
+
+fdisk /dev/sda
+# 83 Linux (Enable Boot) +200M
+# 8E Linux LVM
+# /dev/sda1 (boot) /dev/sda2 (main)
+
+cryptsetup --cipher aes-xts-plain64 --key-size 512 --hash sha512 --iter-time 5000 --use-random --verify-passphrase luksFormat /dev/sda2
+
+cryptsetup luksOpen /dev/sda2 lvm
+
+pvcreate /dev/mapper/lvm
+
+vgcreate main /dev/mapper/lvm
+
+# 3 Partions (Root/Swap/Home)
+
+lvcreate -L 2GB -n swap main
+
+lvcreate -L 100GB -n root main
+
+lvcreate -l 100%FREE -n home main
+
+mkfs.ext2 -m1 -L boot /dev/sda1
+
+mkswap -L swap /dev/mapper/main-swap && swapon /dev/mapper/main-swap
+
+mkfs.ext4 -L root /dev/mapper/main-root
+
+mkfs.ext4 -L home /dev/mapper/main-home
+
+mount /dev/mapper/main-root /mnt
+
+mkdir -p /mnt/boot
+
+mount /dev/sda1 /mnt/boot
+
+mkdir -p /mnt/home
+
+mount /dev/mapper/main-home /mnt/home
+
+# Basic packages to help establish a wireless internet connection
+
+pacstrap /mnt base base-devel wpa_actiond wireless_tools wpa_supplicant net-tools iw dialog
+
+pacstrap /mnt grub-bios
+
+genfstab -U -p /mnt >> /mnt/etc/fstab
+
+nano -w /mnt/etc/fstab
+
+arch-chroot /mnt
+
+nano -w /etc/locale.gen
+
+locale-gen
+
+echo LANG=en_US.UTF-8 > /etc/locale.conf
+
+export LANG=en_US.UTF-8
+
+ln -s /usr/share/zoneinfo/America/New_York /etc/localtime
+
+hwclock --systohc --utc
+
+echo arch > /etc/hostname
+
+nano -w /etc/hosts
+# 127.0.0.1       localhost.localdomain   localhost       arch
+
+nano -w /etc/mkinitcpio.conf
+# MODULES="dm_mod ext2 ext4"
+# HOOKS="base udev autodetect modconf block encrypt lvm2 shutdown filesystems keyboard fsck"
+
+mkinitcpio -p linux
+
+grub-install --recheck /dev/sda
+
+nano -w /etc/default/grub
+# GRUB_CMDLINE_LINUX="cryptdevice=/dev/sda2:lvm"
+
+grub-mkconfig -o /boot/grub/grub.cfg
+
+passwd
+
+exit
+
+umount -R /mnt
+
+reboot
